@@ -170,16 +170,16 @@ generate_sitemap # sitemap.xmlを生成
 echo "変更をコミットしてプッシュします..."
 git add .
 
-# コミットメッセージを引数で受け取るか、デフォルト値を使う
-COMMIT_MESSAGE="Web root content update on $(date)"
-if [ -n "$1" ]; then # 引数があればコミットメッセージにする
-    COMMIT_MESSAGE="$1"
-fi
-
-# 変更がある場合のみコミットとプッシュを行う
-if ! git diff-index --quiet HEAD --; then
+# git add . の後に、ステージングエリアに何か変更があるか確認する
+if git diff --cached --quiet; then
     echo "変更はありません。デプロイをスキップします。"
 else
+    # コミットメッセージを引数で受け取るか、デフォルト値を使う
+    COMMIT_MESSAGE="Web root content update on $(date)"
+    if [ -n "$1" ]; then # 引数があればコミットメッセージにする
+        COMMIT_MESSAGE="$1"
+    fi
+
     git commit -m "$COMMIT_MESSAGE"
     git push -u origin main
     echo "デプロイが完了しました！"
