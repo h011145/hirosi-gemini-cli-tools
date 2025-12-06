@@ -1,7 +1,6 @@
 #!/home/hirosi/my_gemini_project/venv/bin/python
 # -*- coding: utf-8 -*-
 # DESCRIPTION: Markdown原稿を、単一の美しいHTMLファイルに変換します。（一括変換版）
-#              内部テスト用の非対話型です。
 
 import sys
 import os
@@ -9,6 +8,7 @@ import glob
 import markdown
 from datetime import datetime
 import re # description生成用
+import shutil # クリーンアップ用
 
 # --- 定数 ---
 NWS_COLLECTION_ROOT = os.path.expanduser("~/neo_world_saga_collection/")
@@ -24,23 +24,21 @@ def load_html_template(template_path: str) -> str:
         print(f"エラー: HTMLテンプレートの読み込みに失敗しました: {e}", file=sys.stderr)
         sys.exit(1)
 
-# --- HTMLテンプレート（外部ファイルから読み込む） ---
+# HTMLテンプレートを読み込み
 HTML_TEMPLATE = load_html_template(TEMPLATE_FILE)
 
 
 def generate_description(markdown_text: str) -> str:
     """Generate meta description from Markdown text."""
-    # Markdown記法を削除し、プレーンテキストに変換
-    plain_text = re.sub(r'\[.*?\]\(.*?\)|!\s*\[.*?\]\(.*?\)|\*{1,2}|\_{1,2}|\#{1,6}|`{1,3}.*?`{1,3}|- |\* |> ', '', markdown_text)
-    plain_text = re.sub(r'\s+', ' ', plain_text).strip() # 複数の空白を1つに
+    plain_text = re.sub(r'\[.*?\]\(.*?\)|\!.\[.*?\]\(.*?\)|\*{1,2}|\_{1,2}|\#{1,6}|`{1,3}.*?`{1,3}|- |\* |> ', '', markdown_text)
+    plain_text = re.sub(r'\s+', ' ', plain_text).strip()
     
-    # 最初の数文字を抜き出し、適切な長さに調整
     description_length = 160
     if len(plain_text) > description_length:
         description = plain_text[:description_length] + "..."
     else:
         description = plain_text
-    return description.replace('"', '&quot;') # 二重引用符をエスケープ
+    return description.replace('"', '&quot;')
 
 def process_markdown_file(filepath: str):
     """Processes a Markdown file, converts to HTML, and saves it."""
@@ -63,8 +61,6 @@ def process_markdown_file(filepath: str):
         final_html = HTML_TEMPLATE.format(title=title, description=description, content=html_content)
 
         # 5. HTMLファイルとして保存
-        os.makedirs(OUTPUT_DIR, exist_ok=True) # 出力ディレクトリを確実に作成
-
         output_filename = os.path.basename(filepath).replace('.md', '.html')
         output_filepath = os.path.join(OUTPUT_DIR, output_filename)
 
@@ -82,6 +78,21 @@ def main():
     print("--- Markdown to HTML コンバーター（一括変換） ---")
     print(f"対象ディレクトリ: {NWS_COLLECTION_ROOT}")
     print(f"出力ディレクトリ: {OUTPUT_DIR}")
+    print("----------------------------------------")
+
+    # 出力ディレクトリのクリーンアップ
+    print(f"出力ディレクトリ {OUTPUT_DIR} をクリーンアップします...")
+    if os.path.exists(OUTPUT_DIR):
+        # .gitディレクトリを残して他のファイルを削除
+        for item in os.listdir(OUTPUT_DIR):
+            item_path = os.path.join(OUTPUT_DIR, item)
+            if item != ".git": # .gitディレクトリは削除しない
+                if os.path.isfile(item_path):
+                    os.remove(item_path)
+                elif os.path.isdir(item_path):
+                    shutil.rmtree(item_path)
+    os.makedirs(OUTPUT_DIR, exist_ok=True) # 出力ディレクトリを確実に作成
+    print("クリーンアップ完了。")
     print("----------------------------------------")
 
     # 全てのMarkdownファイルを検索
