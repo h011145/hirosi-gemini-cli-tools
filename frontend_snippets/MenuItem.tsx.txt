@@ -1,0 +1,25 @@
+import React, { useMemo } from 'react';
+import { generate_shade } from './utils'; // Assuming generate_shade is in utils
+
+const MenuItem = ({ item, is_selected, on_select }) => {
+  const bg_color = useMemo(() => {
+    if (is_selected) {
+      return generate_shade(item.color, -2); // Darken when selected
+    }
+    return item.color;
+  }, [item.color, is_selected]);
+
+  return (
+    <div
+      className="menu-item"
+      style={{ backgroundColor: bg_color }}
+      onClick={() => on_select(item)}
+      onKeyDown={(e) => handle_key_down(e, item)}
+      tabIndex={0}
+    >
+      {item.label}
+    </div>
+  );
+};
+
+export default MenuItem;

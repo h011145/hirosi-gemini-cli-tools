@@ -1,0 +1,11 @@
+const handle_key_down = (e, item) => {
+  switch (e.key) {
+    case 'Enter':
+    case ' ':
+      on_select(item);
+      break;
+    // Add other key handlers like ArrowUp, ArrowDown if needed
+    default:
+      break;
+  }
+};

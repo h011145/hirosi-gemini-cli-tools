@@ -1,0 +1,9 @@
+[
+    "neo_world_chat.py",
+    "gemini_chat.py",
+    "scripts_set_manager.py",
+    "multilingual_info_viewer.py",
+    "app_lecturer.py",
+    "gemini_project_overseer.py",
+    "web_python_downloader.py"
+]

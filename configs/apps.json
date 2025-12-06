@@ -1,0 +1,28 @@
+[
+  {
+    "filename": "hello_yggdrasil.py",
+    "path": "apps/hello_yggdrasil.py",
+    "description": "ユグドラシルへようこそ！簡単な挨拶を表示します。",
+    "category": "システム",
+    "enabled": true,
+    "quality_score": 1.0
+  },
+  {
+    "filename": "log_chat_bot.py",
+    "path": "apps/log_chat_bot.py",
+    "description": "プロジェクトのログを記憶し、対話するチャットボット。",
+    "category": "AIツール",
+    "enabled": true,
+    "version": "1.0.0"
+  },
+  {
+    "filename": "auto_app_creator.py",
+    "path": "scripts/auto_app_creator.py",
+    "description": "AIが新しいアプリを自動生成するツール。",
+    "category": "AIツール",
+    "enabled": true,
+    "quality_score": 1.0,
+    "last_analyzed_quality": null,
+    "last_generated_by_ai": null
+  }
+]

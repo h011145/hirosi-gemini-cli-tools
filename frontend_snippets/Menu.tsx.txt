@@ -1,0 +1,25 @@
+import React, { useState, useCallback } from 'react';
+import MenuItem from './MenuItem';
+
+const Menu = ({ items }) => {
+  const [selectedItem, setSelectedItem] = useState(null);
+
+  const handle_select_item = useCallback((item) => {
+    setSelectedItem(item);
+  }, []);
+
+  return (
+    <div className="menu">
+      {items.map((item) => (
+        <MenuItem
+          key={item.id}
+          item={item}
+          is_selected={selectedItem && selectedItem.id === item.id}
+          on_select={handle_select_item}
+        />
+      ))}
+    </div>
+  );
+};
+
+export default Menu;

@@ -1,0 +1,121 @@
+# -*- coding: utf-8 -*-
+# -----------------------------------------------------------------------------
+# DESCRIPTION: 自立進化を目指したアプリランク２）
+# Version: 0
+# Category: コアシステム
+# -----------------------------------------------------------------------------
+import os
+import sys
+import logging # loggingモジュールは引き続き使用
+import time # 処理の様子を示すための待機用
+
+# PROJECT_ROOTを正しく特定するために、まず自身のパスからプロジェクトルートを計算
+# このスクリプトは my_gemini_project/scripts/evolution_overseer.py にあると想定
+_current_script_dir = os.path.dirname(os.path.abspath(__file__))
+# scriptsディレクトリの1つ上がプロジェクトルート (my_gemini_project)
+PROJECT_ROOT = os.path.abspath(os.path.join(_current_script_dir, '..'))
+
+# core_utils.py から共通ユーティリティをインポート
+# core_utils.py は my_gemini_project/utils/ にあると想定
+_utils_path = os.path.join(PROJECT_ROOT, 'utils') # PROJECT_ROOTから直接指定
+if _utils_path not in sys.path:
+    sys.path.append(_utils_path)
+
+try:
+    from core_utils import (
+        Color, print_colored,
+        setup_logging, get_config_path, load_config, # save_config を削除
+        get_script_metadata, find_files_recursively, get_gemini_api_key
+    )
+except ImportError as e:
+    # ロギングがまだ完全に設定されていない可能性があるので、printでエラー出力
+    print(f"Error: Could not import core_utils.py. Please ensure it is in '{_utils_path}' and correctly configured. Details: {e}", file=sys.stderr)
+    sys.exit(1)
+
+# ロガーの取得 (core_utilsによって設定された初期ロギングを利用)
+logger = logging.getLogger(__name__)
+
+# --- メインプログラムのロジック ---
+def initialize_overseer_system():
+    """
+    Overseerシステムの初期化処理を行います。
+    ロギング設定の確認、初期設定の読み込みなど。
+    """
+    logger.info("Overseerシステムの初期化を開始します。")
+
+    logger.info(f"プロジェクトルート: {PROJECT_ROOT}")
+
+    # get_config_path に PROJECT_ROOT を明示的に渡す
+    settings_path = get_config_path(PROJECT_ROOT, 'settings.json')
+    app_settings = load_config(settings_path)
+    logger.info(f"アプリケーション設定を読み込みました: {app_settings.keys()}")
+
+    # get_gemini_api_key に PROJECT_ROOT を明示的に渡す
+    api_key = get_gemini_api_key(PROJECT_ROOT)
+    if api_key:
+        logger.info("Gemini APIキーの取得に成功しました。")
+    else:
+        logger.warning("Gemini APIキーが設定されていません。AI機能が制限される可能性があります。")
+
+    logger.info("Overseerシステムの初期化が完了しました。")
+
+def discover_modules():
+    """
+    プロジェクト内のモジュールを再帰的に発見し、メタデータを読み込みます。
+    """
+    logger.info("モジュールの発見を開始します。")
+    # find_files_recursively に PROJECT_ROOT を明示的に渡す
+    module_files = find_files_recursively(PROJECT_ROOT, ['*.py', '*.sh'])
+
+    modules_metadata = []
+    for file_path in module_files:
+        metadata = get_script_metadata(file_path)
+        if metadata:
+            metadata['full_path'] = file_path # フルパスもメタデータに追加
+            modules_metadata.append(metadata)
+            logger.debug(f"モジュール発見: {metadata.get('name')} (Category: {metadata.get('category')})")
+        else:
+            logger.warning(f"'{file_path}' からメタデータを抽出できませんでした。")
+
+    logger.info(f"合計 {len(modules_metadata)} 個のモジュールを発見しました。")
+    return modules_metadata
+
+def main():
+    """
+    Overseerプログラムのメインエントリポイントです。
+    """
+    # ここでロギング設定を再構成 (メインアプリケーションとして)
+    # core_utils が既に基本設定を行っているため、ここではファイル名などをカスタマイズ
+    # setup_logging に PROJECT_ROOT を明示的に渡す
+    setup_logging(project_root=PROJECT_ROOT, log_level=logging.INFO, log_prefix="evolution_overseer")
+
+    print_colored("--- Yggdrasil Overseer プログラムを開始します ---", Color.BRIGHT_MAGENTA)
+    logger.info("Yggdrasil Overseer プログラムが起動しました。")
+
+    # システム初期化
+    initialize_overseer_system()
+
+    # モジュール発見
+    discovered_modules = discover_modules()
+
+    # 発見されたモジュールの概要をログに出力
+    logger.info("\n--- 発見されたモジュール一覧 ---")
+    if discovered_modules:
+        for module in discovered_modules:
+            logger.info(f"  - 名前: {module.get('name', '不明')}, カテゴリ: {module.get('category', '不明')}, 説明: {module.get('description', 'なし')}")
+    else:
+        logger.info("プロジェクト内にモジュールが見つかりませんでした。")
+
+    logger.info("\n監視フェーズが完了しました。")
+
+    logger.info("Yggdrasil Overseer プログラムが終了しました。")
+    print_colored("--- Yggdrasil Overseer プログラムを終了しました ---", Color.BRIGHT_MAGENTA)
+
+if __name__ == "__main__":
+    try:
+        main()
+    except Exception as e:
+        # メイン関数で捕捉されなかった例外をここでキャッチし、ログに出力
+        logger.critical(f"進化監視プログラムで致命的なエラーが発生しました: {e}", exc_info=True)
+        print_colored(f"\n致命的なエラーが発生しました。詳細はログファイルを確認してください: {e}", Color.BRIGHT_RED)
+        sys.exit(1)

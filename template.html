@@ -1,0 +1,52 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{title}</title>
+    <meta name="description" content="{description}">
+    <style>
+        body {{
+            font-family: 'Hiragino Mincho ProN', 'MS PMincho', 'MS Mincho', serif;
+            line-height: 1.8;
+            max-width: 800px;
+            margin: 40px auto;
+            padding: 0 20px;
+            background-color: #fdfdfd;
+            color: #333;
+        }}
+        h1, h2, h3 {{
+            font-family: 'Hiragino Kaku Gothic ProN', 'Meiryo', sans-serif;
+            border-bottom: 2px solid #eee;
+            padding-bottom: 10px;
+            margin-top: 2em;
+        }}
+        h1 {{
+            text-align: center;
+            font-size: 2em;
+            border-bottom: none;
+        }}
+        p {{
+            margin: 1em 0;
+            text-indent: 1em;
+        }}
+        strong {{
+            font-weight: bold;
+        }}
+        em {{
+            font-style: italic;
+        }}
+        a {{
+            color: #005ab4;
+            text-decoration: none;
+        }}
+        a:hover {{
+            text-decoration: underline;
+        }}
+    </style>
+</head>
+<body>
+    <h1>{title}</h1>
+    {content}
+</body>
+</html>
