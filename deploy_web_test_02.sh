@@ -1,27 +1,28 @@
 #!/bin/bash
-# DESCRIPTION: /var/www/html/public の内容をGitHub Pagesにデプロイ（公開）します。
+# DESCRIPTION: /var/www/html/public の内容を新しいテスト用リポジトリにデプロイします。
 
 # --- Configuration ---
-# 設定ファイルから読み込む
-CONFIG_FILE="$(dirname "$0")/deploy_config.json"
-
+# 設定ファイルから読み込む (ただし、このスクリプトではindex.htmlを生成しないので、直接利用しない)
+# CONFIG_FILE="$(dirname "$0")/deploy_config.json"
 # jqがインストールされているか確認
-if ! command -v jq &> /dev/null
-then
-    echo "エラー: jq がインストールされていません。JSONを処理できません。" >&2
-    echo "sudo apt install jq" >&2
-    exit 1
-fi
-
-# 設定ファイルを読み込む
-SITE_TITLE=$(jq -r '.site_title' "$CONFIG_FILE")
-NOTE_LINK_URL=$(jq -r '.note_link.url' "$CONFIG_FILE")
-NOTE_LINK_TEXT=$(jq -r '.note_link.text' "$CONFIG_FILE")
-HTML_SITE_ROOT=$(jq -r '.html_site_root' "$CONFIG_FILE")
+# if ! command -v jq &> /dev/null; then
+#     echo "エラー: jq がインストールされていません。JSONを処理できません。" >&2
+#     echo "sudo apt install jq" >&2
+#     exit 1
+# fi
+# SITE_TITLE=$(jq -r '.site_title' "$CONFIG_FILE")
+# NOTE_LINK_URL=$(jq -r '.note_link.url' "$CONFIG_FILE")
+# NOTE_LINK_TEXT=$(jq -r '.note_link.text' "$CONFIG_FILE")
+# HTML_SITE_ROOT=$(jq -r '.html_site_root' "$CONFIG_FILE")
 
 # デプロイ元のディレクトリは固定
 PUBLIC_DIR="/var/www/html/public"
-GITHUB_REPO_URL="https://github.com/h011145/hirosi-web-public.git" 
+# 新しいリポジトリのURL
+GITHUB_REPO_URL="https://github.com/h011145/hirosi-web-test-02.git" 
+# 新しい公開サイトのルートURL
+# Sitemap生成のために必要
+HTML_SITE_ROOT="https://h011145.github.io/hirosi-web-test-02" 
+
 
 # --- Helper Function for Sitemap Generation ---
 generate_sitemap() {
@@ -47,7 +48,7 @@ generate_sitemap() {
 
     for html_file_path in ./*.html;
     do
-        if [[ "$html_file_path" != "./index.html" ]]; then # index.htmlは今回の処理で生成されるので除外
+        if [[ "$html_file_path" != "./index.html" && "$html_file_path" != "./sitemap.xml" ]]; then # sitemap.xmlも除外
             filename=$(basename "$html_file_path")
             echo "  <url>" >> sitemap.xml
             echo "    <loc>${HTML_SITE_ROOT}/$filename</loc>" >> sitemap.xml
@@ -77,12 +78,12 @@ echo "デプロイ先リポジトリ: $GITHUB_REPO_URL"
 cd "$PUBLIC_DIR" || exit 1
 
 # --- Step 0: Gitリポジトリの状態を初期化/確認 ---
-echo "Gitリポジトリを確実に初期化・設定します..."
+echo "Gitリポジリを確実に初期化・設定します..."
 # .gitディレクトリが存在しない場合は初期化
 if [ ! -d ".git" ]; then
-    echo "  .gitディレクトリがありません。新規Gitリポジトリを初期化します。"
+    echo "  .gitディレクトリがありません。新規Gitリポジリを初期化します。"
     git init
-    git branch -M main # 初期化後に必ずmainブランチを作成
+    git branch -M gh-pages # 初期化後に必ずgh-pagesブランチを作成
     echo "  リモート'origin'を設定します。"
     git remote add origin "$GITHUB_REPO_URL"
 else
@@ -95,10 +96,10 @@ else
         git remote remove origin
         git remote add origin "$GITHUB_REPO_URL"
     fi
-    # ローカルブランチがmainであることを確認
-    if ! git rev-parse --abbrev-ref HEAD | grep -q "main"; then
-        echo "  ローカルブランチを'main'に設定します。"
-        git checkout -b main || git branch -M main
+    # ローカルブランチがgh-pagesであることを確認
+    if ! git rev-parse --abbrev-ref HEAD | grep -q "gh-pages"; then
+        echo "  ローカルブランチを'gh-pages'に設定します。"
+        git checkout -b gh-pages || git branch -M gh-pages
     fi
     # リモートから最新の状態をフェッチするが、ローカルファイルを上書きしない (ローカルの変更を優先するため)
     git fetch origin >/dev/null 2>&1 || true
@@ -106,73 +107,11 @@ fi
 echo "Gitリポジトリの準備が完了しました。"
 
 
-# --- Step 1: index.html の自動生成 ---
-echo "index.html を自動生成します。"
-    
-# 既存のHTMLファイルをスキャンし、タイトルとファイル名を収集
-NOVEL_LINKS=""
-NOVEL_COUNT=0
-HTML_FILES=()
-
-shopt -s globstar
-shopt -s nullglob  
-
-for html_file_path in ./*.html;
-do
-    if [[ "$html_file_path" != "./index.html" ]]; then # index.htmlは今回の処理で生成されるので除外
-        HTML_FILES+=("$html_file_path")
-    fi
-done
-
-shopt -u globstar
-shopt -u nullglob
-
-IFS=$'\n' sorted_html_files=($(sort <<<"${HTML_FILES[*]}"))
-unset IFS
-
-for html_file_path in "${sorted_html_files[@]}"; do
-    filename=$(basename "$html_file_path")
-    title_from_filename=$(echo "$filename" | sed 's/\.html$//' | sed 's/_/ /g')
-    relative_url="/$filename"
-    NOVEL_LINKS+="<p><a href=\"$relative_url\">$title_from_filename</a></p>\n"
-    NOVEL_COUNT=$((NOVEL_COUNT+1))
-done
-
-if [ "$NOVEL_COUNT" -eq 0 ]; then
-    INDEX_CONTENT="<p>まだ作品がありません。Markdown-to-HTML コンバーターでHTMLファイルを生成してください。</p>"
-else
-    INDEX_CONTENT="<h2>格納ファイル一覧 ($NOVEL_COUNT ファイル)</h2>\n$NOVEL_LINKS"
+# --- Step 1: index.html はユーザーが/var/www/html/publicに配置したものをそのまま利用 ---
+echo "index.html は /var/www/html/public に配置されたものをそのまま利用します。"
+if [ ! -f "index.html" ]; then
+    echo "警告: index.html が /var/www/html/public に見つかりません。サイトのトップページが表示されない可能性があります。" >&2
 fi
-
-# サイトタイトルは設定ファイルから読み込む
-# NOTE: SITE_TITLE は既にCONFIG_FILEから読み込まれているはず
-
-# noteサイトへのリンクHTML
-NOTE_LINK_HTML="<p><a href=\"${NOTE_LINK_URL}\" target=\"_blank\">${NOTE_LINK_TEXT}</a></p>\n"
-
-# HTMLテンプレートを一時ファイルとして作成
-temp_template_file=$(mktemp)
-cat > "$temp_template_file" <<'EOF_HTML_TEMPLATE'
-<!DOCTYPE html>
-<html lang="ja">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>%s</title>
-</head>
-<body>
-    <h1>%s</h1>
-    %s
-    %s
-</body>
-</html>
-EOF_HTML_TEMPLATE
-
-# index.htmlを生成
-printf "$(cat "$temp_template_file")" "$SITE_TITLE" "$SITE_TITLE" "$NOTE_LINK_HTML" "$INDEX_CONTENT" > "index.html"
-rm "$temp_template_file"
-echo "index.html の生成が完了しました。"
-
 
 # --- Step 1.5: sitemap.xml の生成 ---
 generate_sitemap # sitemap.xmlを生成
@@ -192,10 +131,10 @@ else
     fi
 
     git commit -m "$COMMIT_MESSAGE"
-    git push -u origin main --force # 強制プッシュでリモートをローカルに合わせる
+    git push -u origin gh-pages --force # 強制プッシュでリモートをローカルに合わせる
     echo "デプロイが完了しました！"
 fi
 
 echo "----------------------------------------"
 echo "${HTML_SITE_ROOT} に数分後に反映されます。"
-echo "--- 処理完了 ---"
+--- 処理完了 ---
