@@ -6,6 +6,7 @@ import os
 import sys
 import json
 import datetime
+import re # reモジュールをインポート
 
 # Gemini API ライブラリをインポート
 try:
@@ -66,6 +67,16 @@ def call_gemini_api(api_key: str, prompt_text: str, site_name: str) -> str:
         print(f"エラー: Gemini APIの呼び出し中にエラーが発生しました: {e}", file=sys.stderr)
         return ""
 
+def strip_markdown_code_fences(text: str) -> str:
+    """Gemini APIの応答からMarkdownのコードブロックを示す ```html や ``` を削除する"""
+    # 冒頭の ```html を削除
+    if text.startswith('```html'):
+        text = text[len('```html'):].strip()
+    # 末尾の ``` を削除
+    if text.endswith('```'):
+        text = text[:-len('```')].strip()
+    return text
+
 def get_user_input(prompt_text: str, default_value: str = "") -> str:
     """ユーザーからの入力を取得するヘルパー関数"""
     return input(f"{prompt_text} [{default_value}]: ") or default_value
@@ -120,11 +131,14 @@ def main():
 """
 
     # Gemini API を呼び出し
-    generated_body_html = call_gemini_api(api_key, prompt, site_name)
+    generated_body_html_raw = call_gemini_api(api_key, prompt, site_name)
 
-    if not generated_body_html:
+    if not generated_body_html_raw:
         print("エラー: コンテンツの生成に失敗しました。", file=sys.stderr)
         return
+    
+    # Markdownコードブロック記号を削除
+    generated_body_html = strip_markdown_code_fences(generated_body_html_raw)
 
     # 最終的なHTMLファイルテンプレート
     full_html_template = """<!DOCTYPE html>
