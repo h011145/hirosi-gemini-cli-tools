@@ -6,7 +6,16 @@ import os
 import sys
 import json
 import datetime
-import google.generativeai as genai # Gemini API Library
+
+# Gemini API ライブラリをインポート
+try:
+    import google.generativeai as genai
+except ImportError:
+    print("エラー: 'google-generativeai' ライブラリが見つかりません。", file=sys.stderr)
+    print("以下のコマンドでインストールしてください:", file=sys.stderr)
+    print("pip install google-generativeai", file=sys.stderr)
+    sys.exit(1)
+
 
 # --- パス設定 ---
 PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -27,24 +36,29 @@ def get_gemini_api_key() -> str:
 
     api_key = os.getenv("GEMINI_API_KEY")
     if api_key:
-        print("APIキーを環境変数 'GEMINI_API_KEY' から読み込みました。")
         return api_key
     
-    print("\n--- Gemini APIキーの入力 ---")
-    try:
-        api_key = input("APIキーを直接入力してください: ")
-    except (EOFError, KeyboardInterrupt):
-        api_key = ""
-    return api_key
+    # ユーザー入力を求めるのは一度だけ
+    if not hasattr(get_gemini_api_key, 'asked_for_input'):
+        print("\n--- Gemini APIキーの入力 ---")
+        try:
+            api_key = input("APIキーを直接入力してください: ")
+            get_gemini_api_key.asked_for_input = True # 入力を求めたフラグ
+        except (EOFError, KeyboardInterrupt):
+            api_key = ""
+        return api_key
+    else:
+        return "" # 既に入力を求めた場合は空を返す
 
-# Gemini API の呼び出し (実際にはここにAPI呼び出しロジックが入る)
-def call_gemini_api(api_key: str, prompt_text: str) -> str:
+# Gemini API の呼び出し (現在はモックではなく実APIを呼び出す)
+def call_gemini_api(api_key: str, prompt_text: str, site_name: str) -> str:
     print("\n--- Gemini APIにコンテンツ生成をリクエスト中 ---")
     print("プロンプト:\n", prompt_text[:500] + "..." if len(prompt_text) > 500 else prompt_text)
     
     try:
         genai.configure(api_key=api_key)
-        model = genai.GenerativeModel('gemini-2.5-flash') # gemini-1.5-flash if 2.5 is not available or too expensive
+        # モデルを gemini-2.5-flash に変更
+        model = genai.GenerativeModel('gemini-2.5-flash')
 
         response = model.generate_content(prompt_text)
         return response.text
@@ -106,26 +120,29 @@ def main():
 """
 
     # Gemini API を呼び出し
-    generated_body_html = call_gemini_api(api_key, prompt)
+    generated_body_html = call_gemini_api(api_key, prompt, site_name)
 
     if not generated_body_html:
         print("エラー: コンテンツの生成に失敗しました。", file=sys.stderr)
         return
 
-    # 最終的なHTMLファイルを作成
-    full_html_content = f"""<!DOCTYPE html>
+    # 最終的なHTMLファイルテンプレート
+    full_html_template = """<!DOCTYPE html>
 <html lang="ja">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>{site_name}</title>
+    <title>{site_title}</title>
     <!-- プロジェクトサイトのCSS/JS/画像への正しいパス解決のためにBASEタグを追加 -->
-    <base href="https://h011145.github.io/hirosi-web-fresh-start/">
+    <base href="https://h011145.github.io/ai-business-homepage-experiment/">
 </head>
 <body>
-{generated_body_html}
+{body_content}
 </body>
-</html>"
+</html>"""
+
+    # 最終的なHTMLファイルを構築
+    full_html_content = full_html_template.format(site_title=site_name, body_content=generated_body_html)
 
     # ファイル名を決定
     output_filename = "ai_business_homepage.html"
