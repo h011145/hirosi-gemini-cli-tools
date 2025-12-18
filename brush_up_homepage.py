@@ -4,10 +4,9 @@
 
 import os
 import sys
-import json
-from bs4 import BeautifulSoup
-
-# Gemini API ライブラリをインポート
+import datetime
+import feedparser
+import re # reモジュールをインポート
 try:
     import google.generativeai as genai
 except ImportError:
@@ -17,15 +16,16 @@ except ImportError:
     sys.exit(1)
 
 
-# --- パス設定 (generate_ai_homepage.py と共通) ---
+# --- パスとURL設定 ---
 PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 API_FILE_PATH = os.path.join(PROJECT_ROOT, "api")
 DEFAULT_HTML_PATH = "/var/www/html/public/ai_business_homepage.html"
+NHK_RSS_FEED_URL = "https://news.web.nhk/n-data/conf/na/rss/cat0.xml"
 
 
-# --- APIキー取得関数 (nws_writer.py から移植) ---
+# --- APIキー取得関数 ---
 def get_gemini_api_key() -> str:
-    """APIキーを取得する (apiファイル > 環境変数 > ユーザー入力)"""
+    """APIキーを取得する (apiファイル > 環境変数)"""
     if os.path.exists(API_FILE_PATH):
         with open(API_FILE_PATH, 'r', encoding='utf-8') as f:
             api_key = f.read().strip()
@@ -40,23 +40,27 @@ def get_gemini_api_key() -> str:
         print("APIキーを環境変数 'GEMINI_API_KEY' から読み込みました。")
         return api_key
     
-    # ユーザー入力を求めるのは一度だけ
-    if not hasattr(get_gemini_api_key, 'asked_for_input'):
-        print("\n--- Gemini APIキーの入力 ---")
-        try:
-            api_key = input("APIキーを直接入力してください: ")
-            get_gemini_api_key.asked_for_input = True # 入力を求めたフラグ
-        except (EOFError, KeyboardInterrupt):
-            api_key = ""
-        return api_key
-    else:
-        return "" # 既に入力を求めた場合は空を返す
+    return ""
 
+# --- RSSフィード取得関数 ---
+def get_latest_rss_headline(rss_url: str) -> str:
+    """指定されたRSSフィードから最新記事の見出しを取得する"""
+    print(f"RSSフィードを取得中: {rss_url}")
+    try:
+        feed = feedparser.parse(rss_url)
+        if feed.entries:
+            latest_title = feed.entries[0].title
+            print(f"最新の見出しを取得しました: {latest_title}")
+            return latest_title
+        print("警告: RSSフィードにエントリがありませんでした。", file=sys.stderr)
+        return "最新ニュースはありません。"
+    except Exception as e:
+        print(f"エラー: RSSフィードの取得または解析中にエラーが発生しました: {e}", file=sys.stderr)
+        return "最新ニュースの取得に失敗しました。"
 
-# Gemini API の呼び出し
+# --- Gemini API 呼び出し関数 ---
 def call_gemini_api_for_brush_up(api_key: str, original_html_content: str, user_instruction: str) -> str:
     print("\n--- Gemini APIにブラッシュアップをリクエスト中 ---")
-    
     try:
         genai.configure(api_key=api_key)
         model = genai.GenerativeModel('gemini-2.5-flash')
@@ -84,34 +88,35 @@ def call_gemini_api_for_brush_up(api_key: str, original_html_content: str, user_
         ]
 
         full_prompt = "\n".join(prompt_parts)
-        
-        print("プロンプト:\n", full_prompt[:1000] + "..." if len(full_prompt) > 1000 else full_prompt)
         print("--- Gemini API呼び出し中...しばらくお待ちください。 ---")
-        
         response = model.generate_content(full_prompt)
         return response.text
-
     except Exception as e:
         print(f"エラー: Gemini APIの呼び出し中にエラーが発生しました: {e}", file=sys.stderr)
         return ""
 
+# --- ユーティリティ関数 ---
 def strip_markdown_code_fences(text: str) -> str:
-    """Gemini APIの応答からMarkdownのコードブロックを示す ```html や ``` を削除する"""
-    # 冒頭の ```html を削除
-    if text.startswith('```html'):
-        text = text[len('```html'):].strip()
-    # 末尾の ``` を削除
-    if text.endswith('```'):
-        text = text[:-len('```')].strip()
+    """Gemini APIの応答からMarkdownのコードブロック(```html ... ```)のみを抽出する"""
+    # ```html で始まり ``` で終わるブロックを探す
+    match = re.search(r'```html\s*(.*?)\s*```', text, re.DOTALL)
+    if match:
+        # マッチした内側のコンテンツを返す
+        return match.group(1).strip()
+    
+    # もし上記パターンにマッチしないが、``` が存在する場合は、その内側を試す
+    match = re.search(r'```\s*(.*?)\s*```', text, re.DOTALL)
+    if match:
+        return match.group(1).strip()
+
+    # それでも見つからない場合は、元のテキストをそのまま返す（フォールバック）
+    print("警告: HTMLコードブロック(```html...```)が見つかりませんでした。API応答をそのまま返します。", file=sys.stderr)
     return text
 
-def get_user_input(prompt_text: str, default_value: str = "") -> str:
-    """ユーザーからの入力を取得するヘルパー関数"""
-    return input(f"{prompt_text} [{default_value}]: ") or default_value
-
+# --- メイン処理 ---
 def main():
-    """メイン関数"""
-    print("--- AIページブラッシュアップツール ---")
+    """メイン関数 (非対話モード)"""
+    print("--- AIページブラッシュアップツール (自動モード) ---")
 
     api_key = get_gemini_api_key()
     if not api_key:
@@ -120,35 +125,31 @@ def main():
     
     print("-" * 30)
 
-    # ブラッシュアップ対象のHTMLファイルパスを取得
-    html_file_path = get_user_input(f"ブラッシュアップするHTMLファイルのパスを入力してください", DEFAULT_HTML_PATH)
+    html_file_path = DEFAULT_HTML_PATH
     if not os.path.exists(html_file_path):
-        print(f"エラー: 指定されたファイル '{html_file_path}' が見つかりません。")
+        print(f"エラー: 対象ファイル '{html_file_path}' が見つかりません。", file=sys.stderr)
+        print("最初に `generate_ai_homepage.py` を実行してホームページを作成してください。", file=sys.stderr)
         return
 
-    # 既存のHTMLコンテンツを読み込み
     with open(html_file_path, 'r', encoding='utf-8') as f:
         original_html_content = f.read()
 
-    # ユーザーからのブラッシュアップ指示を取得
-    user_brush_up_instruction = get_user_input("どのようにブラッシュアップしたいですか？ (例: テキストをもっと簡潔に、レイアウトを改善など)", "全体的に洗練されたデザインにする")
+    latest_headline = get_latest_rss_headline(NHK_RSS_FEED_URL)
+    user_brush_up_instruction = f"今日のニュースのテーマ「{latest_headline}」に合わせて、より魅力的で洗練されたデザインにブラッシュアップしてください。特に、このテーマに関連するコンテンツや表現を強化してください。"
+    print(f"AIへのブラッシュアップ指示: {user_brush_up_instruction}")
 
-    # Gemini APIを呼び出し
     brushed_up_html_raw = call_gemini_api_for_brush_up(api_key, original_html_content, user_brush_up_instruction)
 
     if not brushed_up_html_raw:
         print("エラー: ブラッシュアップコンテンツの生成に失敗しました。", file=sys.stderr)
         return
     
-    # Markdownコードブロック記号を削除
     brushed_up_html = strip_markdown_code_fences(brushed_up_html_raw)
 
-    # 既存のファイルをバックアップ
     backup_path = html_file_path + ".bak_" + datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
     os.rename(html_file_path, backup_path)
     print(f"元のファイル '{html_file_path}' を '{backup_path}' にバックアップしました。")
 
-    # 新しいHTMLを元のファイル名で保存
     try:
         with open(html_file_path, 'w', encoding='utf-8') as f:
             f.write(brushed_up_html)

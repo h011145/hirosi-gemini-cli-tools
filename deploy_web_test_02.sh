@@ -2,25 +2,28 @@
 # DESCRIPTION: /var/www/html/public の内容を新しいテスト用リポジトリにデプロイします。
 
 # --- Configuration ---
-# 設定ファイルから読み込む (ただし、このスクリプトではindex.htmlを生成しないので、直接利用しない)
-# CONFIG_FILE="$(dirname "$0")/deploy_config.json"
+# 設定ファイルから読み込む
+CONFIG_FILE="$(dirname "$0")/deploy_config.json"
+
 # jqがインストールされているか確認
-# if ! command -v jq &> /dev/null; then
-#     echo "エラー: jq がインストールされていません。JSONを処理できません。" >&2
-#     echo "sudo apt install jq" >&2
-#     exit 1
-# fi
-# SITE_TITLE=$(jq -r '.site_title' "$CONFIG_FILE")
-# NOTE_LINK_URL=$(jq -r '.note_link.url' "$CONFIG_FILE")
-# NOTE_LINK_TEXT=$(jq -r '.note_link.text' "$CONFIG_FILE")
-# HTML_SITE_ROOT=$(jq -r '.html_site_root' "$CONFIG_FILE")
+if ! command -v jq &> /dev/null
+then
+    echo "エラー: jq がインストールされていません。JSONを処理できません。" >&2
+    echo "sudo apt install jq" >&2
+    exit 1
+fi
+
+# 設定ファイルを読み込む (deploy_config.jsonは既存のものを利用)
+SITE_TITLE=$(jq -r '.site_title' "$CONFIG_FILE")
+NOTE_LINK_URL=$(jq -r '.note_link.url' "$CONFIG_FILE")
+NOTE_LINK_TEXT=$(jq -r '.note_link.text' "$CONFIG_FILE")
 
 # デプロイ元のディレクトリは固定
 PUBLIC_DIR="/var/www/html/public"
 # 新しいリポジトリのURL
 GITHUB_REPO_URL="https://github.com/h011145/hirosi-web-test-02.git" 
 # 新しい公開サイトのルートURL
-# Sitemap生成のために必要
+# Note: プロジェクトサイトの場合、パスにリポジリ名が含まれる。HTML内のリンクは相対パスで解決するため、HTML_SITE_ROOTはSitemap生成のみに使用
 HTML_SITE_ROOT="https://h011145.github.io/hirosi-web-test-02" 
 
 
@@ -33,7 +36,6 @@ generate_sitemap() {
     echo '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">' >> sitemap.xml
 
     # index.html へのエントリを追加
-    # Note: /var/www/html/public の場合は index.html が常にトップにあると仮定
     echo "  <url>" >> sitemap.xml
     echo "    <loc>${HTML_SITE_ROOT}/</loc>" >> sitemap.xml
     echo "    <lastmod>$(date -u +"%Y-%m-%dT%H:%M:%SZ")</lastmod>" >> sitemap.xml
@@ -48,7 +50,7 @@ generate_sitemap() {
 
     for html_file_path in ./*.html;
     do
-        if [[ "$html_file_path" != "./index.html" && "$html_file_path" != "./sitemap.xml" ]]; then # sitemap.xmlも除外
+        if [[ "$html_file_path" != "./index.html" ]]; then # index.htmlは今回の処理で生成されるので除外
             filename=$(basename "$html_file_path")
             echo "  <url>" >> sitemap.xml
             echo "    <loc>${HTML_SITE_ROOT}/$filename</loc>" >> sitemap.xml
