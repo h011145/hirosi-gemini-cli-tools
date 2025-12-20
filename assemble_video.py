@@ -1,100 +1,154 @@
 #!/home/hirosi/my_gemini_project/venv/bin/python
 # -*- coding: utf-8 -*-
-# DESCRIPTION: 音声ファイルと画像ファイルから動画を組み立てます。
+# DESCRIPTION: テキストからImageMagickとffmpegを直接使用して、テキストが順番に表示される動画を生成します。
 
 import os
 import sys
+import re
 import subprocess
+import tempfile
+import shutil
 from datetime import datetime
 
 # --- 定数 ---
 PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 VIDEO_OUTPUT_DIR = os.path.join(PROJECT_ROOT, "scripts", "generated_videos")
+# フォントはImageMagickが見つけられる名前を指定。-fontで指定。
+FONT = "Noto-Sans-JP" # 'TakaoPGothic' なども候補
+WIDTH, HEIGHT = 1280, 720
+FPS = 24
 
-# --- ヘルパー関数 ---
-def get_audio_duration(audio_filepath: str) -> float:
-    """ffprobeを使って音声ファイルの長さを秒単位で取得する"""
+def generate_image_for_scene(scene_text: str, output_path: str) -> bool:
+    """ImageMagickを使って、1つのシーンのテキスト画像を生成する"""
     command = [
-        'ffprobe', '-v', 'error', '-show_entries', 'format=duration',
-        '-of', 'default=noprint_wrappers=1:nokey=1', audio_filepath
+        'convert',
+        '-background', 'black',
+        '-fill', 'white',
+        '-font', FONT,
+        '-size', f'{WIDTH-100}x{HEIGHT-100}',
+        '-gravity', 'center',
+        f'caption:{scene_text}',
+        output_path
     ]
     try:
-        result = subprocess.run(command, check=True, capture_output=True, text=True)
-        return float(result.stdout.strip())
-    except (subprocess.CalledProcessError, FileNotFoundError) as e:
-        if isinstance(e, FileNotFoundError):
-            print("エラー: 'ffprobe' コマンドが見つかりません。FFmpegがインストールされているか確認してください。", file=sys.stderr)
-        else:
-            print(f"エラー: 音声長の取得中にffprobeの実行に失敗しました。\n{e.stderr}", file=sys.stderr)
-        return 0.0
-
-def assemble_video(audio_filepath: str, image_filepath: str, output_filepath: str) -> bool:
-    """音声と画像から動画を組み立てる。成功すればTrue、失敗すればFalseを返す。"""
-    print(f"動画を組み立て中: {output_filepath}")
-
-    if not all(os.path.exists(p) for p in [audio_filepath, image_filepath]):
-        print(f"エラー: 入力ファイルが見つかりません。音声: {audio_filepath}, 画像: {image_filepath}", file=sys.stderr)
-        return False
-
-    duration = get_audio_duration(audio_filepath)
-    if duration <= 0:
-        print("エラー: 有効な音声長を取得できませんでした。動画生成を中止します。", file=sys.stderr)
-        return False
-
-    command = [
-        'ffmpeg', '-loop', '1', '-i', image_filepath, '-i', audio_filepath,
-        '-c:v', 'libx264', '-t', str(duration), '-pix_fmt', 'yuv420p',
-        '-vf', 'scale=1280:720', '-y', output_filepath
-    ]
-
-    try:
-        result = subprocess.run(command, check=True, capture_output=True, text=True, encoding='utf-8')
-        print("動画ファイルの生成が完了しました。")
-        if not os.path.exists(output_filepath):
-             print(f"エラー: 動画生成は成功しましたが、ファイルが見つかりません: {output_filepath}", file=sys.stderr)
-             return False
+        subprocess.run(command, check=True, capture_output=True, text=True, encoding='utf-8')
         return True
-    except FileNotFoundError:
-        print("エラー: 'ffmpeg' コマンドが見つかりません。FFmpegがインストールされているか確認してください。", file=sys.stderr)
-        return False
-    except subprocess.CalledProcessError as e:
-        print("エラー: ffmpegの実行に失敗しました。", file=sys.stderr)
-        print(f"コマンド: {' '.join(e.cmd)}", file=sys.stderr)
-        print(f"リターンコード: {e.returncode}", file=sys.stderr)
-        print(f"エラー出力:\n{e.stderr}", file=sys.stderr)
+    except Exception as e:
+        print(f"エラー: ImageMagickでの画像生成に失敗しました: {e}", file=sys.stderr)
+        if hasattr(e, 'stderr'):
+            print(e.stderr, file=sys.stderr)
         return False
 
 # --- メイン処理 ---
-def main(audio_filepath: str = None, image_filepath: str = None) -> str | None:
-    """メイン関数。成功した場合は動画ファイルパスを、失敗した場合はNoneを返す。"""
-    print("--- 動画組み立てツール ---")
+def main(story_content: str, story_name: str, audio_filepath: str = None) -> str | None:
+    """ImageMagickとffmpegを使って動画を生成する"""
+    print("--- ImageMagick/ffmpeg 動画組み立てツール ---")
     os.makedirs(VIDEO_OUTPUT_DIR, exist_ok=True)
 
-    if not audio_filepath or not image_filepath:
-        print("エラー: 音声ファイルと画像ファイルのパスが引数として指定されていません。", file=sys.stderr)
+    if not story_content or not story_name:
+        print("エラー: 物語のコンテンツと名前が必要です。", file=sys.stderr)
         return None
 
-    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    output_filename = f"assembled_video_{timestamp}.mp4"
-    output_filepath = os.path.join(VIDEO_OUTPUT_DIR, output_filename)
-    
-    success = assemble_video(audio_filepath, image_filepath, output_filepath)
+    # 一時ディレクトリを作成
+    temp_dir = tempfile.mkdtemp(prefix="video_gen_")
+    print(f"一時ディレクトリを作成: {temp_dir}")
 
-    print("--- 全処理完了 ---")
+    try:
+        # 1. テキストをシーン（段落）に分割
+        scenes_text = [p.strip() for p in story_content.split('\n') if p.strip()]
+        if not scenes_text:
+            print("エラー: 動画にするテキスト内容がありません。", file=sys.stderr)
+            return None
 
-    if success:
-        print(f"生成された動画ファイル: {output_filepath}")
-        return output_filepath
-    else:
+        # 2. ffmpegのconcat demuxer用の入力ファイルリストを作成
+        ffmpeg_input_file = os.path.join(temp_dir, "ffmpeg_input.txt")
+        image_files = []
+        with open(ffmpeg_input_file, 'w', encoding='utf-8') as f:
+            for i, scene_text in enumerate(scenes_text):
+                image_path = os.path.join(temp_dir, f"scene_{i:03d}.png")
+                
+                if not generate_image_for_scene(scene_text, image_path):
+                    print(f"シーン {i+1} の画像生成に失敗したため、中止します。")
+                    return None
+                
+                duration = max(3.0, len(scene_text) / 15.0)
+                f.write(f"file '{image_path}'\n")
+                f.write(f"duration {duration}\n")
+                image_files.append(image_path)
+        
+        # 最後の画像のエントリを追記（concat demuxerの仕様）
+        if image_files:
+            with open(ffmpeg_input_file, 'a', encoding='utf-8') as f:
+                f.write(f"file '{image_files[-1]}')\n")
+
+        # 3. ffmpegで静止画から無音動画を生成
+        silent_video_path = os.path.join(temp_dir, "silent_video.mp4")
+        ffmpeg_cmd1 = [
+            'ffmpeg',
+            '-f', 'concat',
+            '-safe', '0',
+            '-i', ffmpeg_input_file,
+            '-vf', f'fps={FPS},format=yuv420p',
+            '-y',
+            silent_video_path
+        ]
+        print("ffmpegで無音動画を生成中...")
+        subprocess.run(ffmpeg_cmd1, check=True, capture_output=True, text=True, encoding='utf-8')
+
+        # 4. ffmpegで音声と無音動画を合成
+        # ファイル名を安全にするための正規表現を修正
+        safe_story_name = re.sub(r'[^\w._ -]', '_', story_name.replace('.md', ''))
+        final_output_filename = f"assembled_video_{safe_story_name}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.mp4"
+        final_output_path = os.path.join(VIDEO_OUTPUT_DIR, final_output_filename)
+        
+        ffmpeg_cmd2 = [
+            'ffmpeg',
+            '-i', silent_video_path,
+        ]
+        if audio_filepath and os.path.exists(audio_filepath):
+            print(f"音声ファイル {audio_filepath} を合成中...")
+            ffmpeg_cmd2.extend(['-i', audio_filepath])
+            # -shortest オプションで、短い方のストリームの長さに合わせる
+            ffmpeg_cmd2.extend(['-c:v', 'copy', '-c:a', 'aac', '-shortest'])
+        else:
+            print("音声なしで動画を最終処理中...")
+            ffmpeg_cmd2.extend(['-c', 'copy'])
+        
+        ffmpeg_cmd2.extend(['-y', final_output_path])
+
+        subprocess.run(ffmpeg_cmd2, check=True, capture_output=True, text=True, encoding='utf-8')
+
+        print(f"動画ファイルの生成が完了しました: {final_output_path}")
+        return final_output_path
+
+    except Exception as e:
+        print(f"エラー: 動画生成のパイプライン中にエラーが発生しました: {e}", file=sys.stderr)
+        if hasattr(e, 'stderr'):
+            print("--- STDERR ---", file=sys.stderr)
+            print(e.stderr, file=sys.stderr)
         return None
+    finally:
+        # 一時ディレクトリをクリーンアップ
+        print(f"一時ディレクトリを削除: {temp_dir}")
+        shutil.rmtree(temp_dir)
+        print("--- 全処理完了 ---")
 
 if __name__ == "__main__":
-    if len(sys.argv) == 3:
-        result_path = main(sys.argv[1], sys.argv[2])
-        if result_path:
-            sys.exit(0)
-        else:
+    if len(sys.argv) > 1:
+        try:
+            story_file = sys.argv[1]
+            story_name = os.path.basename(story_file)
+            audio_file = sys.argv[2] if len(sys.argv) > 2 else None
+            with open(story_file, 'r', encoding='utf-8') as f:
+                content = f.read()
+            
+            if main(content, story_name, audio_file):
+                sys.exit(0)
+            else:
+                sys.exit(1)
+        except Exception as e:
+            print(f"エラー: 実行中にエラーが発生しました: {e}", file=sys.stderr)
             sys.exit(1)
     else:
-        print("使用法: python assemble_video.py <audio_file_path> <image_file_path>", file=sys.stderr)
+        print("使用法: python assemble_video.py <story_filepath> [audio_filepath]", file=sys.stderr)
         sys.exit(1)
