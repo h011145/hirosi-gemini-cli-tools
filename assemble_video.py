@@ -13,8 +13,8 @@ from datetime import datetime
 # --- 定数 ---
 PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 VIDEO_OUTPUT_DIR = os.path.join(PROJECT_ROOT, "scripts", "generated_videos")
-# フォントはImageMagickが見つけられる名前を指定。-fontで指定。
-FONT = "Noto-Sans-JP" # 'TakaoPGothic' なども候補
+# ImageMagickが認識している日本語フォント名に修正
+FONT = "Takao-Pゴシック"
 WIDTH, HEIGHT = 1280, 720
 FPS = 24
 
@@ -79,7 +79,7 @@ def main(story_content: str, story_name: str, audio_filepath: str = None) -> str
         # 最後の画像のエントリを追記（concat demuxerの仕様）
         if image_files:
             with open(ffmpeg_input_file, 'a', encoding='utf-8') as f:
-                f.write(f"file '{image_files[-1]}')\n")
+                f.write(f"file '{image_files[-1]}'\n")
 
         # 3. ffmpegで静止画から無音動画を生成
         silent_video_path = os.path.join(temp_dir, "silent_video.mp4")
