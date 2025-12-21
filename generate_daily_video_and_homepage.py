@@ -1,6 +1,6 @@
 #!/home/hirosi/my_gemini_project/venv/bin/python
-# -*- coding: utf-8 -*- 
-# DESCRIPTION:ネオワールドサーガの動画とホームページの生成からデプロイまでをオーケストレーションします。
+# -*- coding: utf-8 -*-
+# DESCRIPTION:ネオワールドサーガの物語を自動執筆し、動画とホームページの生成からデプロイまでをオーケストレーションします。
 
 import os
 import sys
@@ -11,23 +11,18 @@ import subprocess
 from datetime import datetime
 
 # 外部スクリプトをインポート
-# sys.path にスクリプトのディレクトリを追加してインポート可能にする
 script_dir = os.path.dirname(os.path.abspath(__file__))
 if script_dir not in sys.path:
     sys.path.append(script_dir)
 
-# 各モジュールをインポート (main関数が値を返すように修正済みを想定)
-import generate_narration_audio
-import generate_scene_images
-import assemble_video
-import generate_ai_homepage # ホームページ生成スクリプト
+# 各モジュールをインポート
+import append_saga_story
+import assemble_video # ImageMagick/ffmpeg版
+import generate_ai_homepage
 
 # --- 定数 ---
 NWS_COLLECTION_ROOT = os.path.expanduser("~/neo_world_saga_collection/")
-GEMINI_TMP_DIR = os.path.expanduser("~/.gemini/tmp/2a5cc3f9e55f69e8861c4b2400ee9808e005edeef0f96209c1a7cc301661792e") 
-
-# Ensure GEMINI_TMP_DIR exists
-os.makedirs(GEMINI_TMP_DIR, exist_ok=True)
+BGM_FILEPATH = "/usr/share/starfighter/music/frozen_jam.ogg"
 
 # --- ヘルパー関数 ---
 def load_random_saga_story() -> tuple[str | None, str | None]:
@@ -39,7 +34,12 @@ def load_random_saga_story() -> tuple[str | None, str | None]:
             print(f"警告: ディレクトリに物語ファイルが見つかりません: {NWS_COLLECTION_ROOT}", file=sys.stderr)
             return None, None
         
-        selected_file = random.choice(files)
+        valid_files = [f for f in files if os.path.getsize(f) > 200]
+        if not valid_files:
+            print(f"警告: 200バイト以上の物語ファイルが見つかりません。", file=sys.stderr)
+            return None, None
+
+        selected_file = random.choice(valid_files)
         with open(selected_file, 'r', encoding='utf-8') as f:
             return f.read(), os.path.basename(selected_file)
     except Exception as e:
@@ -48,50 +48,41 @@ def load_random_saga_story() -> tuple[str | None, str | None]:
 
 # --- メイン処理 ---
 def main():
-    """
-    動画生成パイプラインをオーケストレーションし、生成された動画ファイルのパスを返します。
-    """
+    """動画生成パイプラインをオーケストレーションします。"""
     print("--- 全体オーケストレーター開始 ---")
 
-    # 1. 物語の選択
-    print("\n1. ネオワールドサーガの物語を選択中...")
-    story_content, story_name = load_random_saga_story()
-    if not story_content:
-        print("エラー: 物語を取得できませんでした。処理を中止します。", file=sys.stderr)
-        return 1
-    print(f"  - 選択された物語: {story_name}")
-
-    audio_filepath = None
-    image_filepath = None
-    video_filepath = None
-    html_filepath = None
-
     try:
-        # 2. ナレーション音声を生成
-        print("\n2. ナレーション音声を生成中...")
-        audio_filepath = generate_narration_audio.main(story_content, story_name)
-        if not audio_filepath:
-            print("エラー: ナレーション音声ファイルの生成に失敗しました。", file=sys.stderr)
+        # 1. 物語の続きを自動執筆
+        print("\n1. ネオワールドサーガの物語を自動執筆中...")
+        if not append_saga_story.main():
+            # このステップは失敗しても致命的ではないため、警告に留めて続行
+            print("警告: 物語の自動執筆に失敗しました。処理は続行します。", file=sys.stderr)
+        
+        # 2. 動画・HP化する物語をランダムに選択
+        print("\n2. 動画・ホームページ化する物語を選択中...")
+        story_content, story_name = load_random_saga_story()
+        if not story_content:
+            print("エラー: 物語を取得できませんでした。処理を中止します。", file=sys.stderr)
             return 1
-        print(f"  - 生成された音声ファイル: {audio_filepath}")
+        print(f"  - 選択された物語: {story_name}")
 
-        # 3. シーン画像を生成
-        print("\n3. シーン画像を生成中...")
-        image_filepath = generate_scene_images.main(story_content, story_name)
-        if not image_filepath:
-            print("エラー: シーン画像ファイルの生成に失敗しました。", file=sys.stderr)
-            return 1
-        print(f"  - 生成された画像ファイル: {image_filepath}")
+        # 変数初期化
+        video_filepath = None
+        html_filepath = None
+        audio_filepath = BGM_FILEPATH
 
-        # 4. 動画を組み立て
-        print("\n4. 動画を組み立て中...")
-        video_filepath = assemble_video.main(audio_filepath, image_filepath)
+        # 3. ナレーション音声を生成（今回はスキップ）
+        print("\n3. ナレーション音声をスキップし、BGMを使用します。")
+
+        # 4. テキストと映像を合成
+        print("\n4. 動画を組み立て中 (ImageMagick/ffmpeg版)...")
+        video_filepath = assemble_video.main(story_content, story_name, audio_filepath)
         if not video_filepath:
             print("エラー: 動画ファイルの組み立てに失敗しました。", file=sys.stderr)
             return 1
         print(f"  - 生成された動画ファイル: {video_filepath}")
 
-        # 5. ホームページコンテンツを生成 (動画埋め込み含む)
+        # 5. ホームページコンテンツを生成
         print("\n5. ホームページコンテンツを生成中 (動画埋め込み)...")
         html_filepath = generate_ai_homepage.main(story_content, story_name, video_filepath)
         if not html_filepath:
@@ -104,17 +95,16 @@ def main():
         deploy_script_path = os.path.join(script_dir, "deploy_ai_business_homepage.sh")
         deploy_command = [deploy_script_path, video_filepath]
 
-        # check=True は CalledProcessError を送出する
         deploy_process = subprocess.run(deploy_command, capture_output=True, text=True, check=True)
         print("--- デプロイスクリプト STDOUT ---")
         print(deploy_process.stdout)
         if deploy_process.stderr:
-            print("--- デプロイスクリプト STDERR ---")
+            print("--- デプロイスクリプト STDERR ---", file=sys.stderr)
             print(deploy_process.stderr, file=sys.stderr)
         print("デプロイプロセスが完了しました。")
 
     except subprocess.CalledProcessError as e:
-        print("エラー: デプロイスクリプトの実行に失敗しました。", file=sys.stderr)
+        print("エラー: スクリプトの実行に失敗しました。", file=sys.stderr)
         print(f"リターンコード: {e.returncode}", file=sys.stderr)
         print("\n--- FAILED SCRIPT STDOUT ---", file=sys.stderr)
         print(e.stdout, file=sys.stderr)
@@ -122,10 +112,11 @@ def main():
         print(e.stderr, file=sys.stderr)
         return 1
     except Exception as e:
+        import traceback
         print(f"エラー: パイプライン実行中に予期せぬエラーが発生しました: {e}", file=sys.stderr)
+        traceback.print_exc()
         return 1
 
-    
     print("\n--- 全体オーケストレーター完了 ---")
     return 0 # 成功
 
